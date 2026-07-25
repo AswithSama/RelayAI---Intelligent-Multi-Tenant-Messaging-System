@@ -8,9 +8,7 @@ from app.api.routes import (
 )
 
 
-api_router = APIRouter(
-    prefix="/api/v1",
-)
+api_router = APIRouter(prefix="/api/v1",)
 
 api_router.include_router(company.router)
 api_router.include_router(customers.router)

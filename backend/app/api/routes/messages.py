@@ -10,13 +10,8 @@ from app.services.messages import (
 router = APIRouter()
 
 
-@router.get(
-    "/conversations/{conversation_id}/messages",
-    response_model=list[MessageResponse],
-)
-def list_messages(
-    conversation_id: int,
-) -> list[dict]:
+@router.get("/conversations/{conversation_id}/messages",response_model=list[MessageResponse],)
+def list_messages(conversation_id: int,) -> list[dict]:
     return get_messages_by_conversation(conversation_id)
 
 
@@ -25,10 +20,7 @@ def list_messages(
     response_model=MessageResponse,
     status_code=status.HTTP_201_CREATED,
 )
-def add_message(
-    conversation_id: int,
-    message: MessageCreate,
-) -> dict:
+def add_message(conversation_id: int,message: MessageCreate,) -> dict:
     created_message = create_message(
         conversation_id=conversation_id,
         sender=message.sender,
