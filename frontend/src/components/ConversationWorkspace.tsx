@@ -21,6 +21,7 @@ interface ConversationWorkspaceProps {
   messages: Message[];
   onSendCustomerMessage: (text: string) => Promise<void>;
   onSendCompanyMessage: (text: string) => Promise<void>;
+  onRunAI: () => Promise<void>;
 }
 
 export function ConversationWorkspace({
@@ -30,6 +31,7 @@ export function ConversationWorkspace({
   messages,
   onSendCustomerMessage,
   onSendCompanyMessage,
+  onRunAI,
 }: ConversationWorkspaceProps) {
   const [customerMessageText, setCustomerMessageText] = useState("");
   const [companyMessageText, setCompanyMessageText] = useState("");
@@ -95,6 +97,7 @@ export function ConversationWorkspace({
         type="button"
         className="run-button"
         disabled={!conversationSelected}
+        onClick={onRunAI}
       >
         <Play size={16} fill="currentColor" />
         Run AI

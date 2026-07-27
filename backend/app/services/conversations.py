@@ -1,6 +1,5 @@
 from app.database.connection import execute_query
 
-
 def get_conversations_by_customer(
     customer_id: int,
 ) -> list[dict]:
@@ -24,18 +23,23 @@ def get_conversations_by_customer(
 def get_conversation_context(
     conversation_id: int,
 ) -> dict | None:
+
     query = """
         SELECT
             conversations.id AS conversation_id,
-            conversations.customer_id,
 
+            customers.id AS customer_id,
             customers.name AS customer_name,
             customers.phone AS customer_phone,
-            customers.company_id,
+            customers.account_number,
             customers.queue_status,
             customers.review_reason,
 
-            companies.name AS company_name
+            companies.id AS company_id,
+            companies.name AS company_name,
+            companies.phone_number AS company_phone_number,
+            companies.google_review_link,
+            companies.crm
 
         FROM conversations
 

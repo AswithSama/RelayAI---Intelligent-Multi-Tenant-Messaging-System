@@ -11,6 +11,7 @@ import {
   getCustomers,
   getConversations,
   getMessages,
+  runAI,
   type Company,
   type Customer,
   type Conversation,
@@ -46,6 +47,19 @@ export default function App() {
     null
   );
   const [messagesError, setMessagesError] = useState<string | null>(null);
+  const handleRunAI = async (): Promise<void> => {
+    if (!selectedConversation) {
+      return;
+    }
+
+    try {
+      const result = await runAI(selectedConversation.id);
+
+      console.log("Run AI result:", result);
+    } catch (error) {
+      console.error("Failed to run AI:", error);
+    }
+  };
 
   useEffect(() => {
     async function loadCompanies() {
@@ -341,6 +355,7 @@ export default function App() {
           messages={conversationMessages}
           onSendCustomerMessage={handleCustomerMessage}
           onSendCompanyMessage={handleCompanyMessage}
+          onRunAI={handleRunAI}
         />
       </div>
     </div>

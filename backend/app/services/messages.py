@@ -54,3 +54,35 @@ def create_message(
     }
 
     return execute_write(query, parameters)
+
+
+def create_ai_message(
+    conversation_id: int,
+    body: str,
+) -> dict:
+    query = """
+        INSERT INTO messages (
+            conversation_id,
+            sender,
+            body
+        )
+        VALUES (
+            %(conversation_id)s,
+            'ai',
+            %(body)s
+        )
+        RETURNING
+            id,
+            conversation_id,
+            sender,
+            body,
+            created_at
+    """
+
+    parameters = {
+        "conversation_id": conversation_id,
+        "body": body,
+    }
+
+    return execute_write(query,parameters,)
+
