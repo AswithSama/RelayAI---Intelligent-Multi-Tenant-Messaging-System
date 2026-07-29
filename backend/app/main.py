@@ -1,13 +1,34 @@
+import asyncio
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from ai.shared.pending_run_loop import ai_pending_run_loop
 from app.api.router import api_router
 from app.core.config import settings
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    worker_task = asyncio.create_task(ai_pending_run_loop())
+
+    try:
+        yield
+    finally:
+        worker_task.cancel()
+
+        try:
+            await worker_task
+        except asyncio.CancelledError:
+            pass
+
 
 app = FastAPI(
     title=settings.app_name,
     version="1.0.0",
     debug=settings.debug,
+    lifespan=lifespan,
 )
 
 app.add_middleware(

@@ -11,7 +11,13 @@ from ai.buckets.all_buckets_registered import registry
 graph = create_graph(registry)
 
 
-def ai_workflow_with_meta(customer_id, company_id, body, message_id=None, playground_context=None,):
+def ai_workflow_with_meta(
+    customer_id,
+    company_id,
+    body,
+    message_id=None,
+    playground_context=None,
+):
     """
     Run the AI workflow and return the full result envelope.
 
@@ -28,13 +34,18 @@ def ai_workflow_with_meta(customer_id, company_id, body, message_id=None, playgr
       - selected_template_key: final selected template key, if any
     """
 
+    playground_context = playground_context or {}
+
+    # Ensure the graph node can identify the current message.
+    playground_context["message_id"] = message_id
+
     result = graph.invoke(
         {
             "company_id": str(company_id),
             "customer_id": str(customer_id),
             "customer_message": body,
             "messages": [],
-            "message_id": str(message_id),
+            "message_id": str(message_id) if message_id is not None else None,
             "conversation_history": [],
             "playground_context": playground_context,
         }
@@ -60,9 +71,15 @@ def ai_workflow_with_meta(customer_id, company_id, body, message_id=None, playgr
     }
 
 
-def ai_workflow(customer_id, company_id, body, message_id=None):
+def ai_workflow(
+    customer_id,
+    company_id,
+    body,
+    message_id=None,
+    playground_context=None,
+):
     """
-    Production entry point.
+    Production/playground entry point.
 
     Returns just the customer-facing answer string.
     If should_send_message is False, returns None.
@@ -73,6 +90,7 @@ def ai_workflow(customer_id, company_id, body, message_id=None):
         company_id=company_id,
         body=body,
         message_id=message_id,
+        playground_context=playground_context,
     )
 
     if not result.get("should_send_message"):

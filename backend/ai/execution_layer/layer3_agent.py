@@ -86,7 +86,6 @@ def build_domain_specific_rules(domain: str | None) -> str:
         - The current selected domain is upsell.
         - Choose exactly one approved scenario_id from the selected upsell sub-bucket prompt.
         - Do not return multiple scenario_ids for upsell.
-        - Use the upsell service name only if it is provided in the current selection context.
 
         Upsell inspection scheduling rule:
         - Apply this rule only when the upsell offer is for an inspection and only when the current selected sub-bucket is upsell_acceptance.
@@ -194,9 +193,6 @@ def layer3_scenario_selector_node(registry: BucketRegistry):
                 "bucket_prompt": bucket_prompt,
             }
 
-            selected_context["upsell_service_name"] = domain_result.get(
-                "upsell_service_name",
-            ) or ["none"]
 
             selected_sub_bucket_context.append(selected_context)
 
@@ -269,7 +265,6 @@ def layer3_scenario_selector_node(registry: BucketRegistry):
         for selected_context in selected_sub_bucket_context:
             sub_bucket = selected_context.get("sub_bucket")
             domain = selected_context.get("domain")
-            upsell_service_name = selected_context.get("upsell_service_name") or ["none"]
             domain_specific_rules = build_domain_specific_rules(domain)
             if domain == "billing_info":
                 output_shape_rules = """
@@ -363,11 +358,6 @@ def layer3_scenario_selector_node(registry: BucketRegistry):
                 "selected_sub_bucket_prompt": selected_context.get("bucket_prompt", ""),
             }
 
-            if domain == "upsell":
-                user_payload["current_selection"]["upsell_service_name"] = (
-                    upsell_service_name
-                )
-
             messages = [
                 {"role": "system", "content": system_prompt},
                 *conversation_history,
@@ -389,7 +379,7 @@ def layer3_scenario_selector_node(registry: BucketRegistry):
             response = plain_llm.bind(response_format={"type": "json_object"}).invoke(messages)
 
             #print("\n========== LAYER 3 SINGLE SUB-BUCKET RAW RESPONSE ==========")
-            #print(response.content)
+            print(response.content)
             #print("============================================================\n")
 
             try:
@@ -411,7 +401,6 @@ def layer3_scenario_selector_node(registry: BucketRegistry):
                             "classification_reason",
                             "",
                         ),
-                        "upsell_service_name": upsell_service_name,
                         "selected_scenario_id": None,
                         "scenario_output": {
                             "action": "handle_additional_support",
@@ -454,7 +443,6 @@ def layer3_scenario_selector_node(registry: BucketRegistry):
                             "classification_reason",
                             "",
                         ),
-                        "upsell_service_name": upsell_service_name,
                         "selected_scenario_id": None,
                         "scenario_output": {
                             "action": "handle_additional_support",
@@ -486,7 +474,6 @@ def layer3_scenario_selector_node(registry: BucketRegistry):
                             "classification_reason",
                             "",
                         ),
-                        "upsell_service_name": upsell_service_name,
                         "selected_scenario_id": selected_scenario_id,
                         "scenario_output": scenario_output,
                         "reason": reason or f"Matched selected scenario_id {index}.",

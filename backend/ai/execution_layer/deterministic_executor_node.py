@@ -11,7 +11,6 @@ from ai.tools.tool_additional_support import handle_additional_support
 from ai.tools.tool_billing_info import get_customer_account_info
 from ai.tools.tool_forward_message import forward_message_to_company
 from ai.utils.template_helpers import get_current_day
-from app.database.connection import get_db_connection
 
 logger = logging.getLogger(__name__)
 
@@ -94,29 +93,29 @@ APPROVED_RESPONSE_TEMPLATES = {
     ),
 }
 
+def _is_stale_ai_run(
+    *,
+    state: AgentState,
+    tool_name: str,
+) -> bool:
+    playground_context = state.get("playground_context") or {}
 
-def _is_stale_ai_run(*, state: AgentState, tool_name: str) -> bool:
-    if state.get("playground_context"):
-        return False
-    company_id = state.get("company_id")
-    customer_id = state.get("customer_id")
+    conversation_id = playground_context.get("conversation_id")
     message_id = state.get("message_id")
 
-
-    if not company_id or not customer_id or not message_id:
+    if not conversation_id or not message_id:
         logger.warning(
-            "Cannot run stale AI check before tool=%s because company_id/customer_id/message_id is missing. "
-            "company_id=%s customer_id=%s message_id=%s",
+            "Cannot run stale AI check before tool=%s because "
+            "conversation_id/message_id is missing. "
+            "conversation_id=%s message_id=%s",
             tool_name,
-            company_id,
-            customer_id,
+            conversation_id,
             message_id,
         )
         return False
 
     is_fresh = is_still_latest_inbound(
-        company_id=int(company_id),
-        customer_id=str(customer_id),
+        conversation_id=int(conversation_id),
         message_id=int(message_id),
     )
 
@@ -124,11 +123,11 @@ def _is_stale_ai_run(*, state: AgentState, tool_name: str) -> bool:
         return False
 
     logger.info(
-        "Skipping stale AI side-effect tool. tool=%s processed_message_id=%s company_id=%s customer_id=%s",
+        "Skipping stale AI side-effect tool. "
+        "tool=%s processed_message_id=%s conversation_id=%s",
         tool_name,
         message_id,
-        company_id,
-        customer_id,
+        conversation_id,
     )
 
     return True
@@ -256,154 +255,6 @@ def _is_forwarded_complaint(
     )
 
 
-SERVICE_OPT_IN_SCENARIO_IDS = {
-    "upsell_positive_interest_with_question",
-    "upsell_acceptance_schedule_new",
-    "upsell_acceptance_existing_appointment",
-    "upsell_details_or_price_quote"
-}
-
-UPSELL_SERVICE_DISPLAY_NAMES = {
-    "mosquito": "Mosquito treatment",
-    "tick": "Tick treatment",
-    "flea": "Flea treatment",
-    "rodent": "Rodent control",
-    "rodent_exclusion": "Rodent exclusion inspection",
-    "rodent_protection_boxes": "Rodent protection boxes",
-    "termite": "Termite inspection",
-    "moisture": "Moisture inspection",
-    "weed_prevention": "Weed prevention treatment",
-    "weed_control": "Weed control treatment",
-    "wildlife": "Wildlife inspection",
-    "synthetic_turf": "Synthetic turf",
-    "outdoor_lighting": "Outdoor lighting",
-    "fertilizer": "Fertilizer treatment",
-    "grub": "Grub treatment",
-    "pigeon_control": "Pigeon control",
-    "none": "Upsell service",
-}
-
-
-def _get_upsell_display_name(
-    *,
-    scenario_result: Dict[str, Any],
-) -> str:
-    upsell_service_name = scenario_result.get("upsell_service_name", ["none"])
-
-    if isinstance(upsell_service_name, str):
-        upsell_service_name = [upsell_service_name]
-
-    if not isinstance(upsell_service_name, list):
-        upsell_service_name = ["none"]
-
-    display_names = [
-        UPSELL_SERVICE_DISPLAY_NAMES.get(service_name, "Upsell service")
-        for service_name in upsell_service_name
-        if service_name and service_name != "none"
-    ]
-
-    if not display_names:
-        return "Upsell service"
-
-    if len(display_names) == 1:
-        return display_names[0]
-
-    return ", ".join(display_names[:-1]) + " and " + display_names[-1]
-
-
-def _record_customer_service_opt_in(
-    *,
-    state: AgentState,
-    scenario_result: Dict[str, Any],
-) -> None:
-    if _is_stale_ai_run(state=state, tool_name="record_customer_service_opt_in"):
-        return
-
-    selected_scenario_id = scenario_result.get("selected_scenario_id")
-
-    company_id = state.get("company_id")
-    customer_id = state.get("customer_id")
-
-    if not company_id or not customer_id:
-        logger.warning(
-            "Skipping service opt-in DB update because company_id or customer_id is missing. "
-            "company_id=%s customer_id=%s scenario_id=%s",
-            company_id,
-            customer_id,
-            selected_scenario_id,
-        )
-        return
-
-    if selected_scenario_id == "upsell_acceptance_existing_appointment":
-        event_type = "add_on_added"
-        lead_type = "add-on"
-    else:
-        event_type = "lead_attained"
-        lead_type = "lead"
-
-    add_on_name = _get_upsell_display_name(
-        scenario_result=scenario_result,
-    )
-
-    with get_db_connection() as conn:
-        with conn.cursor() as cursor:
-            # Dollar value of the upsell this customer was actually offered: the
-            # potential_revenue of the iteration on their most recent outbound
-            # upsell_2d message. Mirrors how the manual "Record Upsell" flow resolves
-            # the amount (relies on messages.iteration_id, added 2026-05-14).
-            cursor.execute(
-                """
-                SELECT tmi.potential_revenue
-                FROM messages m
-                JOIN trigger_message_iterations tmi ON tmi.id = m.iteration_id
-                WHERE m.company_id = %(company_id)s
-                  AND m.customer_id = %(customer_id)s
-                  AND m.trigger_key = 'upsell_2d'
-                  AND m.direction = 'outbound'
-                  AND m.iteration_id IS NOT NULL
-                ORDER BY COALESCE(m.sent_at, m.created_at) DESC
-                LIMIT 1
-                """,
-                {"company_id": int(company_id), "customer_id": str(customer_id)},
-            )
-            revenue_row = cursor.fetchone()
-            projected_revenue = revenue_row[0] if revenue_row else None
-
-            cursor.execute(
-                """
-                INSERT INTO recent_activity_events (
-                    company_id,
-                    event_type,
-                    customer_id,
-                    lead_type,
-                    add_on_name,
-                    projected_annual_revenue,
-                    event_date,
-                    created_at
-                )
-                VALUES (
-                    %(company_id)s,
-                    %(event_type)s,
-                    %(customer_id)s,
-                    %(lead_type)s,
-                    %(add_on_name)s,
-                    %(projected_revenue)s,
-                    CURRENT_DATE,
-                    NOW()
-                )
-                """,
-                {
-                    "company_id": int(company_id),
-                    "event_type": event_type,
-                    "customer_id": str(customer_id),
-                    "lead_type": lead_type,
-                    "add_on_name": add_on_name,
-                    "projected_revenue": projected_revenue,
-                },
-            )
-            conn.commit()
-
-
 def _call_handle_additional_support(
     *,
     state: AgentState,
@@ -461,19 +312,7 @@ def _call_forward_message_to_company(
 
     sub_bucket = scenario_result.get("sub_bucket") or "unknown"
 
-    notes_template = parameters.get("notes")
-    upsell_display_name = _get_upsell_display_name(
-        scenario_result=scenario_result,
-    )
-
-    notes = (
-        notes_template.format(
-            upsell_service_name=upsell_display_name.lower(),
-        )
-        if notes_template
-        else None
-    )
-
+    notes = "upsell"
     tool_args = {
         "query_type": parameters.get("query_type"),
         "notes": notes,
@@ -763,18 +602,6 @@ def deterministic_executor_node(
                 + str(missing_template_variables)
             ),
         }
-
-    for scenario_result in scenario_results:
-        selected_scenario_id = scenario_result.get("selected_scenario_id")
-
-        if selected_scenario_id in SERVICE_OPT_IN_SCENARIO_IDS:
-            try:
-                _record_customer_service_opt_in(
-                    state=state,
-                    scenario_result=scenario_result,
-                )
-            except Exception:
-                logger.exception("Failed to record customer service opt-in.")
 
     answer = "\n-----\n".join(formatted_answers)
 

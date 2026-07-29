@@ -1,9 +1,7 @@
 from app.database.connection import execute_query, execute_write
 
 
-def get_messages_by_conversation(
-    conversation_id: int,
-) -> list[dict]:
+def get_messages_by_conversation(conversation_id: int) -> list[dict]:
     query = """
         SELECT
             id,
@@ -22,6 +20,7 @@ def get_messages_by_conversation(
 
     return execute_query(query, parameters)
 
+## merge create_message and create_ai_message into 1
 
 def create_message(
     conversation_id: int,
@@ -54,35 +53,3 @@ def create_message(
     }
 
     return execute_write(query, parameters)
-
-
-def create_ai_message(
-    conversation_id: int,
-    body: str,
-) -> dict:
-    query = """
-        INSERT INTO messages (
-            conversation_id,
-            sender,
-            body
-        )
-        VALUES (
-            %(conversation_id)s,
-            'ai',
-            %(body)s
-        )
-        RETURNING
-            id,
-            conversation_id,
-            sender,
-            body,
-            created_at
-    """
-
-    parameters = {
-        "conversation_id": conversation_id,
-        "body": body,
-    }
-
-    return execute_write(query,parameters,)
-

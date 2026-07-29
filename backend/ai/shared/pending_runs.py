@@ -1,23 +1,22 @@
 # ai/shared/pending_runs.py
-
-from app.core.config import ENVIRONMENT, logger
 from app.database.connection import get_db_connection
 
-AI_DEBOUNCE_SECONDS = 30 if ENVIRONMENT == "prod" else 5
+import logging
+logger = logging.getLogger(__name__)
+
+AI_DEBOUNCE_SECONDS = 5 
 
 
 def enqueue_ai_pending_run(
     *,
-    company_id: int,
-    customer_id: str,
+    conversation_id: int,
     message_id: int,
 ) -> None:
     """
-    Creates or refreshes the pending AI debounce run for one customer conversation.
+    Create or refresh the pending AI run for one playground conversation.
 
-    Every inbound customer SMS should call this after the inbound message is saved.
-    If the customer sends multiple messages quickly, this keeps updating the same
-    row and pushes run_after forward.
+    When a customer sends multiple messages quickly, the existing pending row
+    is updated with the newest message and the debounce timer starts again.
     """
 
     with get_db_connection() as conn:
@@ -25,8 +24,7 @@ def enqueue_ai_pending_run(
             cur.execute(
                 """
                 INSERT INTO ai_pending_runs (
-                    company_id,
-                    customer_id,
+                    conversation_id,
                     latest_message_id,
                     run_after,
                     status,
@@ -35,8 +33,7 @@ def enqueue_ai_pending_run(
                     updated_at
                 )
                 VALUES (
-                    %(company_id)s,
-                    %(customer_id)s,
+                    %(conversation_id)s,
                     %(message_id)s,
                     NOW() + (%(delay_seconds)s || ' seconds')::interval,
                     'pending',
@@ -44,18 +41,32 @@ def enqueue_ai_pending_run(
                     NOW(),
                     NOW()
                 )
-                ON CONFLICT (company_id, customer_id)
+                ON CONFLICT (conversation_id)
                 DO UPDATE SET
                     latest_message_id = EXCLUDED.latest_message_id,
-                    run_after = NOW() + (%(delay_seconds)s || ' seconds')::interval,
-                    status = 'pending',
-                    locked_at = NULL,
+
+                    run_after =
+                        NOW() + (%(delay_seconds)s || ' seconds')::interval,
+
+                    status = CASE
+                        WHEN ai_pending_runs.status = 'running'
+                            THEN 'running'
+                        ELSE 'pending'
+                    END,
+
+                    locked_at = CASE
+                        WHEN ai_pending_runs.status = 'running'
+                            THEN ai_pending_runs.locked_at
+                        ELSE NULL
+                    END,
+
                     updated_at = NOW()
-                WHERE EXCLUDED.latest_message_id > ai_pending_runs.latest_message_id
+
+                WHERE EXCLUDED.latest_message_id >
+                    ai_pending_runs.latest_message_id
                 """,
                 {
-                    "company_id": int(company_id),
-                    "customer_id": str(customer_id),
+                    "conversation_id": int(conversation_id),
                     "message_id": int(message_id),
                     "delay_seconds": AI_DEBOUNCE_SECONDS,
                 },
@@ -66,18 +77,16 @@ def enqueue_ai_pending_run(
 
     if rows_changed == 0:
         logger.info(
-            "AI pending run enqueue ignored because incoming message was not newer. "
-            "company_id=%s customer_id=%s message_id=%s delay_seconds=%s",
-            company_id,
-            customer_id,
+            "AI pending run ignored because the message was not newer. "
+            "conversation_id=%s message_id=%s",
+            conversation_id,
             message_id,
-            AI_DEBOUNCE_SECONDS,
         )
     else:
         logger.info(
-            "AI pending run enqueued/refreshed. company_id=%s customer_id=%s latest_message_id=%s delay_seconds=%s",
-            company_id,
-            customer_id,
+            "AI pending run enqueued or refreshed. "
+            "conversation_id=%s latest_message_id=%s delay_seconds=%s",
+            conversation_id,
             message_id,
             AI_DEBOUNCE_SECONDS,
         )

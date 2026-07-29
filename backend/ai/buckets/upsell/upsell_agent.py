@@ -12,27 +12,6 @@ from ai.shared.model import plain_llm
 
 logger = logging.getLogger(__name__)
 
-VALID_UPSELL_SERVICE_NAMES = {
-    "mosquito",
-    "tick",
-    "flea",
-    "rodent",
-    "rodent_exclusion",
-    "rodent_protection_boxes",
-    "termite",
-    "moisture",
-    "weed_prevention",
-    "weed_control",
-    "wildlife",
-    "synthetic_turf",
-    "outdoor_lighting",
-    "fertilizer",
-    "grub",
-    "pigeon_control",
-    "none",
-}
-
-
 def classify_upsell_sub_bucket(
     registry: BucketRegistry,
     state: AgentState,
@@ -90,10 +69,7 @@ def classify_upsell_sub_bucket(
         - Treat the entire latest customer message as the upsell portion of the message.
         - Classify the entire latest customer message into one upsell sub-bucket.
         """
-    valid_upsell_service_names_text = json.dumps(
-        sorted(VALID_UPSELL_SERVICE_NAMES),
-        indent=4,
-    )
+
     system_prompt = f"""
     You are the Layer 2 upsell classifier in a customer-message routing system.
 
@@ -170,19 +146,6 @@ def classify_upsell_sub_bucket(
     - Return "upsell_decline" when the upsell portion of the message clearly declines, says no, says not interested, says maybe later, says not right now, or asks to stop receiving the offer.
     - Return "upsell_acknowledgment" when the upsell portion of the message is only a harmless acknowledgment, greeting, closing, appreciation, or short follow-up reply that simply acknowledges the previous assistant/company message without adding a new request, decision, question, or action.
 
-    Upsell Service name extraction rules:
-    - Also identify the specific upsell service type or service types being discussed.
-    - Put the result in "upsell_service_name" in the final JSON.
-    - "upsell_service_name" must always be a list.
-    - If exactly one supported service type is clearly being discussed, return a list with one value.
-    - If two or more supported service types are clearly being discussed, return all matched service types in the list.
-    - Return ["none"] when no specific upsell service can be identified.
-    - Do not include "none" together with other service types.
-    - Do not invent service names.
-    - Do not return any value outside the supported service types.
-    - Supported upsell service types:
-        {valid_upsell_service_names_text}
-
     Output rules:
     - Always return valid JSON.
     - Do not include explanations outside JSON.
@@ -191,7 +154,6 @@ def classify_upsell_sub_bucket(
     Return this exact JSON shape:
     {{
         "sub_bucket": "upsell_sub_bucket_name",
-        "upsell_service_name": ["service_type"],
         "reason": "short reason"
     }}
     """
@@ -251,34 +213,6 @@ def classify_upsell_sub_bucket(
 
     sub_bucket = parsed.get("sub_bucket")
     reason = parsed.get("reason", "")
-    upsell_service_name = parsed.get("upsell_service_name") or ["none"]
-    if isinstance(upsell_service_name, str):
-        upsell_service_name = [upsell_service_name]
-    if not isinstance(upsell_service_name, list):
-        upsell_service_name = ["none"]
-
-    invalid_service_names = [
-        service_name
-        for service_name in upsell_service_name
-        if service_name not in VALID_UPSELL_SERVICE_NAMES
-    ]
-
-    if invalid_service_names:
-        logger.warning(
-            "Upsell Layer 2 agent returned unknown upsell service name(s): %s",
-            invalid_service_names,
-        )
-        upsell_service_name = ["none"]
-
-    if "none" in upsell_service_name and len(upsell_service_name) > 1:
-        upsell_service_name = [
-            service_name
-            for service_name in upsell_service_name
-            if service_name != "none"
-        ]
-
-    if not upsell_service_name:
-        upsell_service_name = ["none"]
 
     if sub_bucket not in valid_upsell_bucket_names:
         logger.warning(
@@ -293,17 +227,8 @@ def classify_upsell_sub_bucket(
             sub_bucket = None
             reason = "The upsell agent did not return a valid upsell sub-bucket and no fallback exists."
 
-    upsell_service_update_sub_buckets = {
-        "upsell_acceptance",
-        "upsell_details_or_price",
-    }
-
-    if sub_bucket not in upsell_service_update_sub_buckets:
-        upsell_service_name = ["none"]
-
     return {
         "domain": "upsell",
         "sub_bucket": sub_bucket,
         "reason": reason,
-        "upsell_service_name": upsell_service_name,
     }

@@ -2,38 +2,42 @@
 
 import logging
 
-logger = logging.getLogger(__name__)
 from app.database.connection import execute_query
+
+logger = logging.getLogger(__name__)
 
 
 def is_still_latest_inbound(
     *,
-    company_id: int,
-    customer_id: str,
+    conversation_id: int,
     message_id: int,
 ) -> bool:
+    """
+    Check whether the message being processed is still the latest
+    customer message in the playground conversation.
+    """
+
     rows = execute_query(
         """
         SELECT id, body
         FROM messages
-        WHERE company_id = %(company_id)s
-          AND customer_id::text = %(customer_id)s
-          AND COALESCE(LOWER(direction), '') IN ('inbound', 'incoming', 'received')
+        WHERE conversation_id = %(conversation_id)s
+          AND sender = 'customer'
         ORDER BY created_at DESC, id DESC
         LIMIT 1
         """,
         {
-            "company_id": int(company_id),
-            "customer_id": str(customer_id),
+            "conversation_id": int(conversation_id),
         },
     )
 
     latest_id = int(rows[0]["id"]) if rows else None
 
     logger.info(
-        "AI latest inbound check. company_id=%s customer_id=%s processed_message_id=%s latest_inbound_id=%s latest_body=%s",
-        company_id,
-        customer_id,
+        "AI latest inbound check. "
+        "conversation_id=%s processed_message_id=%s "
+        "latest_inbound_id=%s latest_body=%s",
+        conversation_id,
         message_id,
         latest_id,
         rows[0].get("body") if rows else None,

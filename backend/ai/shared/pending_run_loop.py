@@ -2,7 +2,9 @@
 import asyncio
 
 from ai.shared.pending_run_worker import process_ready_ai_run_once
-from app.core.config import logger
+
+import logging
+logger = logging.getLogger(__name__)
 
 AI_PENDING_RUN_POLL_SECONDS = 3
 
