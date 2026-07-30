@@ -3,9 +3,9 @@ import {
   Bot,
   Building2,
   MessageCircleMore,
-  Play,
   Send,
   UserRound,
+  Trash2,
 } from "lucide-react";
 
 import type {
@@ -21,7 +21,11 @@ interface ConversationWorkspaceProps {
   messages: Message[];
   onSendCustomerMessage: (text: string) => Promise<void>;
   onSendCompanyMessage: (text: string) => Promise<void>;
-  onRunAI: () => Promise<void>;
+  onClearConversation: () => Promise<void>;
+  onMarkCompleted: () => Promise<void>;
+  showMarkCompleted: boolean;
+  aiResponsePending: boolean;
+  aiResponseError: string | null;
 }
 
 export function ConversationWorkspace({
@@ -31,15 +35,48 @@ export function ConversationWorkspace({
   messages,
   onSendCustomerMessage,
   onSendCompanyMessage,
-  onRunAI,
+  onClearConversation,
+  onMarkCompleted,
+  showMarkCompleted,
+  aiResponsePending,
+  aiResponseError,
 }: ConversationWorkspaceProps) {
   const [customerMessageText, setCustomerMessageText] = useState("");
   const [companyMessageText, setCompanyMessageText] = useState("");
   const [companyComposerOpen, setCompanyComposerOpen] = useState(false);
+  const [clearingConversation, setClearingConversation] = useState(false);
+  const conversationSelected = customer !== null && conversation !== null;
+  const [markingCompleted, setMarkingCompleted] = useState(false);
 
-  const conversationSelected =
-    customer !== null && conversation !== null;
+  const handleClearConversation = async () => {
+  if (!conversationSelected || clearingConversation) {
+    return;
+  }
 
+  const confirmed = window.confirm(
+    "Clear all messages in this conversation?"
+  );
+
+  if (!confirmed) {
+    return;
+  }
+
+  try {
+    setClearingConversation(true);
+    await onClearConversation();
+  } finally {
+    setClearingConversation(false);
+  }
+};
+
+const handleMarkCompletedClick = async () => {
+  try {
+    setMarkingCompleted(true);
+    await onMarkCompleted();
+  } finally {
+    setMarkingCompleted(false);
+  }
+  };
   const handleCustomerMessageSubmit = async () => {
     const trimmedMessage = customerMessageText.trim();
 
@@ -92,16 +129,37 @@ export function ConversationWorkspace({
               : "Choose a company workspace to begin testing the AI workflow."}
         </p>
       </div>
-
+      {showMarkCompleted && conversation && (
       <button
         type="button"
-        className="run-button"
-        disabled={!conversationSelected}
-        onClick={onRunAI}
+        className="complete-conversation-button"
+        onClick={handleMarkCompletedClick}
+        disabled={markingCompleted}
       >
-        <Play size={16} fill="currentColor" />
-        Run AI
+        {markingCompleted
+          ? "Marking completed..."
+          : "Mark as completed"}
       </button>
+    )}
+      <button
+        type="button"
+        className="clear-conversation-button"
+        disabled={
+          !conversationSelected ||
+          messages.length === 0 ||
+          clearingConversation
+        }
+        onClick={() => {
+          void handleClearConversation();
+        }}
+      >
+        <Trash2 size={16} />
+
+        {clearingConversation
+          ? "Clearing..."
+          : "Clear conversation"}
+      </button>
+
     </header>
       <section
         className="message-stage"
@@ -130,40 +188,60 @@ export function ConversationWorkspace({
           </div>
         ) : (
           <div className="message-list">
-            {messages.length === 0 ? (
+            {messages.length === 0 && !aiResponsePending ? (
               <div className="empty-conversation">
                 No messages have been added to this conversation.
               </div>
+              
             ) : (
-              messages.map((message) => (
-                <div
-                  key={message.id}
-                  className={`message-row ${message.sender}`}
-                >
+              <>
+              {aiResponsePending && (
+                <div className="message-row ai">
                   <div className="message-bubble">
                     <div className="message-meta">
-                      <span>
-                        {message.sender === "customer"
-                          ? customer.name
-                          : message.sender === "company"
-                            ? "Company Representative"
-                            : "AI Assistant"}
-                      </span>
-
-                      <time dateTime={message.createdAt}>
-                        {new Date(
-                          message.createdAt
-                        ).toLocaleTimeString([], {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </time>
+                      <span>AI Assistant</span>
                     </div>
 
-                    <p>{message.text}</p>
+                    <p>AI is processing the customer message...</p>
                   </div>
                 </div>
-              ))
+              )}
+                {messages.map((message) => (
+                  <div
+                    key={message.id}
+                    className={`message-row ${message.sender}`}
+                  >
+                    <div className="message-bubble">
+                      <div className="message-meta">
+                        <span>
+                          {message.sender === "customer"
+                            ? customer.name
+                            : message.sender === "company"
+                              ? "Company Representative"
+                              : "AI Assistant"}
+                        </span>
+
+                        <time dateTime={message.createdAt}>
+                          {new Date(
+                            message.createdAt
+                          ).toLocaleTimeString([], {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </time>
+                      </div>
+
+                      <p>{message.text}</p>
+                    </div>
+                  </div>
+                ))}
+              </>
+            )}
+
+            {aiResponseError && (
+              <div className="ai-response-error" role="alert">
+                {aiResponseError}
+              </div>
             )}
           </div>
         )}

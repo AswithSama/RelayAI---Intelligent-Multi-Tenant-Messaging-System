@@ -95,9 +95,12 @@ export function QueuePanel({
 
               <p>{customer.lastMessage}</p>
 
-              <div className="queue-reason">
-                {customer.reviewReason}
-              </div>
+              {customer.queueStatus === "review" &&
+                customer.reviewReason && (
+                  <div className="queue-reason">
+                    {customer.reviewReason}
+                  </div>
+                )}
             </button>
           ))
         )}

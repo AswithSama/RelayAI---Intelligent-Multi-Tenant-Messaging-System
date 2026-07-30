@@ -198,7 +198,7 @@ def classify_upsell_sub_bucket(
     ).invoke(messages)
 
     print("\n========== LAYER 2 UPSELL RAW RESPONSE ==========")
-    print(response.content)
+    #print(response.content)
     print("=================================================\n")
 
     try:

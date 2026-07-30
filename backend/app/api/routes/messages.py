@@ -5,6 +5,7 @@ from app.schemas.messages import MessageCreate, MessageResponse
 from app.services.messages import (
     create_message,
     get_messages_by_conversation,
+    delete_messages_by_conversation
 )
 
 
@@ -47,3 +48,7 @@ def add_message(
         )
 
     return created_message
+
+@router.delete("/conversations/{conversation_id}/messages",status_code=status.HTTP_204_NO_CONTENT)
+def clear_conversation_messages(conversation_id: int,) -> None:
+    delete_messages_by_conversation(conversation_id)

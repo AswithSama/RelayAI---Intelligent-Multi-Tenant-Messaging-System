@@ -316,6 +316,25 @@ def get_conversation_context(
 
     return rows[0] if rows else None
 
+def get_conversation_history(
+    *,
+    conversation_id: int,
+) -> list[dict]:
+    return execute_query(
+        """
+        SELECT
+            id,
+            sender,
+            body
+        FROM messages
+        WHERE conversation_id = %(conversation_id)s
+        ORDER BY created_at ASC, id ASC
+        """,
+        {
+            "conversation_id": conversation_id,
+        },
+    )
+
 def run_ai_workflow_for_pending_message(
     *,
     conversation_id: int,
@@ -347,7 +366,9 @@ def run_ai_workflow_for_pending_message(
         fallback_message_id=message_id,
     )
     conversation = get_conversation_context(conversation_id=conversation_id)
-
+    conversation_history = get_conversation_history(
+        conversation_id=conversation_id
+    )
     if not conversation:
         logger.warning(
             "AI run skipped because conversation was not found. "
@@ -367,6 +388,7 @@ def run_ai_workflow_for_pending_message(
         message_id=message_id,
         playground_context={
             "conversation_id": conversation_id,
+            "conversation_history": conversation_history,
             "message_id": message_id,
             "customer_first_name": conversation.get("customer_name") or "",
             "company_phone": conversation.get("company_phone") or "",

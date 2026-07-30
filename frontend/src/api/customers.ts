@@ -50,3 +50,26 @@ export async function getCustomers(
     updatedAt: customer.updated_at,
   }));
 }
+
+export async function markCustomerCompleted(
+  customerId: number
+): Promise<Customer> {
+  const customer = await apiRequest<CustomerApiResponse>(
+    `/companies/customers/${customerId}/complete`,
+    {
+      method: "PATCH",
+    }
+  );
+
+  return {
+    id: customer.id,
+    companyId: customer.company_id,
+    name: customer.name,
+    phone: customer.phone,
+    queueStatus: customer.queue_status,
+    lastMessage: customer.last_message,
+    reviewReason: customer.review_reason,
+    createdAt: customer.created_at,
+    updatedAt: customer.updated_at,
+  };
+}

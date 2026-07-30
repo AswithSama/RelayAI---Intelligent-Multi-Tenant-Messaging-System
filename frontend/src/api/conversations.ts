@@ -13,22 +13,7 @@ export interface Conversation {
   createdAt: string;
   updatedAt: string;
 }
-export interface RunAIResponse {
-  conversation_id: number;
-  status: string;
-  message: string;
-}
 
-export async function runAI(
-  conversationId: number
-) {
-  return apiRequest(
-    `/customers/${conversationId}/run-ai`,
-    {
-      method: "POST",
-    }
-  );
-}
 export async function getConversations(
   customerId: number
 ): Promise<Conversation[]> {

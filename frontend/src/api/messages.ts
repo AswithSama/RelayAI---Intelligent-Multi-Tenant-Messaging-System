@@ -1,6 +1,6 @@
 import { apiRequest } from "./client";
 
-export type MessageSender = "customer" | "company" | "ai";
+export type MessageSender = "customer" | "company" | "ai"  | "system";
 
 interface MessageApiResponse {
   id: number;
@@ -60,4 +60,15 @@ export async function createMessage(
   );
 
   return mapMessage(createdMessage);
+}
+
+export async function clearConversationMessages(
+  conversationId: number
+): Promise<void> {
+  await apiRequest<void>(
+    `/conversations/${conversationId}/messages`,
+    {
+      method: "DELETE",
+    }
+  );
 }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { Activity, FlaskConical } from "lucide-react";
 
 import { CompanySelector } from "./components/CompanySelector";
@@ -6,12 +6,13 @@ import { ConversationWorkspace } from "./components/ConversationWorkspace";
 import { QueuePanel } from "./components/QueuePanel";
 
 import {
+  clearConversationMessages,
   createMessage,
   getCompanies,
   getCustomers,
   getConversations,
   getMessages,
-  runAI,
+  markCustomerCompleted,
   type Company,
   type Customer,
   type Conversation,
@@ -47,19 +48,79 @@ export default function App() {
     null
   );
   const [messagesError, setMessagesError] = useState<string | null>(null);
-  const handleRunAI = async (): Promise<void> => {
+  const [aiResponsePending, setAiResponsePending] = useState(false);
+  const [aiResponseError, setAiResponseError] = useState<string | null>(
+    null
+  );
+  const aiPollingTimerRef = useRef<number | null>(null);
+  const preserveSelectedConversationRef = useRef(false);
+  const handleMarkCompleted = async (): Promise<void> => {
+  if (
+    selectedCompanyId === null ||
+    selectedCustomerId === null
+  ) {
+    return;
+  }
+
+  try {
+    await markCustomerCompleted(selectedCustomerId);
+
+    const completedCustomers = await getCustomers(
+      selectedCompanyId,
+      "completed"
+    );
+
+    preserveSelectedConversationRef.current = true;
+
+    setCustomers(completedCustomers);
+    setActiveTab("completed");
+    setAiResponseError(null);
+  } catch (error) {
+    console.error(
+      "Failed to mark customer as completed:",
+      error
+    );
+
+    setAiResponseError(
+      error instanceof Error
+        ? error.message
+        : "Unable to mark the customer as completed."
+    );
+  }
+};
+  const handleClearConversation = async (): Promise<void> => {
     if (!selectedConversation) {
       return;
     }
 
     try {
-      const result = await runAI(selectedConversation.id);
+      if (aiPollingTimerRef.current !== null) {
+        window.clearInterval(aiPollingTimerRef.current);
+        aiPollingTimerRef.current = null;
+      }
 
-      console.log("Run AI result:", result);
+      await clearConversationMessages(
+        selectedConversation.id
+      );
+
+      setMessages([]);
+      setAiResponsePending(false);
+      setAiResponseError(null);
     } catch (error) {
-      console.error("Failed to run AI:", error);
+      console.error(
+        "Failed to clear conversation:",
+        error
+      );
     }
   };
+
+  useEffect(() => {
+  return () => {
+    if (aiPollingTimerRef.current !== null) {
+      window.clearInterval(aiPollingTimerRef.current);
+    }
+  };
+}, []);
 
   useEffect(() => {
     async function loadCompanies() {
@@ -89,9 +150,11 @@ export default function App() {
   useEffect(() => {
     if (selectedCompanyId === null) {
       setCustomers([]);
+    if (!preserveSelectedConversationRef.current) {
       setSelectedCustomerId(null);
       setConversations([]);
       setMessages([]);
+    }
       return;
     }
 
@@ -100,9 +163,11 @@ export default function App() {
         setCustomersLoading(true);
         setCustomersError(null);
 
-        setSelectedCustomerId(null);
-        setConversations([]);
-        setMessages([]);
+        if (!preserveSelectedConversationRef.current) {
+          setSelectedCustomerId(null);
+          setConversations([]);
+          setMessages([]);
+        }
 
         const customerData = await getCustomers(
           selectedCompanyId as number,
@@ -110,6 +175,7 @@ export default function App() {
         );
 
         setCustomers(customerData);
+        preserveSelectedConversationRef.current = false;
       } catch (error) {
         const message =
           error instanceof Error
@@ -208,7 +274,149 @@ export default function App() {
     );
   }, [messages, selectedConversation]);
 
-  const addMessage = async (
+ const waitForAIResponse = (
+  conversationId: number,
+  customerMessageId: number
+): void => {
+  if (aiPollingTimerRef.current !== null) {
+    window.clearInterval(aiPollingTimerRef.current);
+  }
+
+  setAiResponsePending(true);
+  setAiResponseError(null);
+
+  let attempts = 0;
+  const maxAttempts = 40;
+
+  aiPollingTimerRef.current = window.setInterval(async () => {
+    attempts += 1;
+
+    try {
+      const updatedMessages = await getMessages(
+        conversationId
+      );
+
+      const sortedMessages = [...updatedMessages].sort(
+        (firstMessage, secondMessage) =>
+          new Date(firstMessage.createdAt).getTime() -
+          new Date(secondMessage.createdAt).getTime()
+      );
+
+      setMessages(sortedMessages);
+
+      const aiResponseExists = sortedMessages.some(
+        (message) =>
+          message.sender === "ai" &&
+          message.id > customerMessageId
+      );
+
+      if (
+        selectedCompanyId !== null &&
+        selectedCustomerId !== null
+      ) {
+        const [reviewCustomers, completedCustomers] =
+          await Promise.all([
+            getCustomers(
+              selectedCompanyId,
+              "review"
+            ),
+            getCustomers(
+              selectedCompanyId,
+              "completed"
+            ),
+          ]);
+
+        const isInReview = reviewCustomers.some(
+          (customer) =>
+            customer.id === selectedCustomerId
+        );
+
+        const isInCompleted = completedCustomers.some(
+          (customer) =>
+            customer.id === selectedCustomerId
+        );
+
+        /*
+         * Stop once:
+         * 1. An AI response exists, or
+         * 2. The customer has moved to a different queue.
+         */
+        const customerMoved =
+          (activeTab === "review" && isInCompleted) ||
+          (activeTab === "completed" && isInReview);
+
+        if (aiResponseExists || customerMoved) {
+          if (aiPollingTimerRef.current !== null) {
+            window.clearInterval(
+              aiPollingTimerRef.current
+            );
+
+            aiPollingTimerRef.current = null;
+          }
+
+          setAiResponsePending(false);
+          setAiResponseError(null);
+
+          preserveSelectedConversationRef.current = true;
+
+          if (isInReview) {
+            setCustomers(reviewCustomers);
+            setActiveTab("review");
+            return;
+          }
+
+          if (isInCompleted) {
+            setCustomers(completedCustomers);
+            setActiveTab("completed");
+            return;
+          }
+
+          return;
+        }
+      }
+
+      if (attempts >= maxAttempts) {
+        if (aiPollingTimerRef.current !== null) {
+          window.clearInterval(
+            aiPollingTimerRef.current
+          );
+
+          aiPollingTimerRef.current = null;
+        }
+
+        setAiResponsePending(false);
+
+        setAiResponseError(
+          "The AI response is taking longer than expected."
+        );
+      }
+    } catch (error) {
+      if (aiPollingTimerRef.current !== null) {
+        window.clearInterval(
+          aiPollingTimerRef.current
+        );
+
+        aiPollingTimerRef.current = null;
+      }
+
+      setAiResponsePending(false);
+
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Unable to retrieve the AI response.";
+
+      setAiResponseError(message);
+
+      console.error(
+        "Failed to retrieve AI response:",
+        error
+      );
+    }
+  }, 1500);
+};
+
+const addMessage = async (
   sender: MessageSender,
   text: string
 ): Promise<void> => {
@@ -233,10 +441,18 @@ export default function App() {
       ...currentMessages,
       savedMessage,
     ]);
+
+    if (sender === "customer") {
+      waitForAIResponse(
+        selectedConversation.id,
+        savedMessage.id
+      );
+    }
   } catch (error) {
     console.error("Failed to create message:", error);
   }
-  };
+};
+
   const handleCompanyChange = (companyId: number | null) => {
     setSelectedCompanyId(companyId);
     setSelectedCustomerId(null);
@@ -355,7 +571,11 @@ export default function App() {
           messages={conversationMessages}
           onSendCustomerMessage={handleCustomerMessage}
           onSendCompanyMessage={handleCompanyMessage}
-          onRunAI={handleRunAI}
+          onClearConversation={handleClearConversation}
+          onMarkCompleted={handleMarkCompleted}
+          showMarkCompleted={activeTab === "review"}
+          aiResponsePending={aiResponsePending}
+          aiResponseError={aiResponseError}
         />
       </div>
     </div>

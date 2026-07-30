@@ -379,7 +379,7 @@ def layer3_scenario_selector_node(registry: BucketRegistry):
             response = plain_llm.bind(response_format={"type": "json_object"}).invoke(messages)
 
             #print("\n========== LAYER 3 SINGLE SUB-BUCKET RAW RESPONSE ==========")
-            print(response.content)
+            #print(response.content)
             #print("============================================================\n")
 
             try:

@@ -53,3 +53,26 @@ def create_message(
     }
 
     return execute_write(query, parameters)
+
+
+def delete_messages_by_conversation(
+    conversation_id: int,
+) -> bool:
+    delete_pending_run_query = """
+        DELETE FROM ai_pending_runs
+        WHERE conversation_id = %(conversation_id)s
+    """
+
+    delete_messages_query = """
+        DELETE FROM messages
+        WHERE conversation_id = %(conversation_id)s
+    """
+
+    parameters = {
+        "conversation_id": conversation_id,
+    }
+
+    execute_query(delete_pending_run_query, parameters)
+    execute_query(delete_messages_query, parameters)
+
+    return True
